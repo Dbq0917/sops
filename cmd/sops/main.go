@@ -919,6 +919,108 @@ func main() {
 			},
 		},
 		{
+			Name:  "merge",
+			Usage: "merge three revisions of an encrypted file",
+			Flags: append([]cli.Flag{
+				cli.StringFlag{
+					Name:  "base",
+					Usage: "the common ancestor of the two encrypted files being merged",
+				},
+				cli.StringFlag{
+					Name:  "local",
+					Usage: "the local encrypted file",
+				},
+				cli.StringFlag{
+					Name:  "remote",
+					Usage: "the remote encrypted file",
+				},
+				cli.StringFlag{
+					Name:  "output",
+					Usage: "write the merged encrypted file to this path (defaults to --local, use - for stdout)",
+				},
+				cli.StringFlag{
+					Name:  "input-type",
+					Usage: "currently json, yaml, dotenv, ini and binary are supported. If not set, sops will use the file's extension to determine the type",
+				},
+				cli.StringFlag{
+					Name:  "output-type",
+					Usage: "currently json, yaml, dotenv, ini and binary are supported. If not set, sops will use the output file's extension to determine the type",
+				},
+				cli.StringFlag{
+					Name:  "filename-override",
+					Usage: "use this filename to determine the input and output formats when the merge driver uses temporary files without extensions",
+				},
+				cli.BoolFlag{
+					Name:  "ignore-mac",
+					Usage: "ignore Message Authentication Code during decryption",
+				},
+				cli.StringFlag{
+					Name:   "decryption-order",
+					Usage:  "comma separated list of decryption key types",
+					EnvVar: "SOPS_DECRYPTION_ORDER",
+				},
+			}, keyserviceFlags...),
+			Action: func(c *cli.Context) error {
+				if c.NArg() != 0 {
+					return common.NewExitError("Error: merge only accepts named flags", codes.ErrorConflictingParameters)
+				}
+				localPath := c.String("local")
+				remotePath := c.String("remote")
+				if localPath == "" || remotePath == "" {
+					return common.NewExitError("Error: both --local and --remote are required", codes.NoFileSpecified)
+				}
+				outputPath := c.String("output")
+				if outputPath == "" {
+					outputPath = localPath
+				}
+				storePath := outputPath
+				if storePath == "-" {
+					storePath = localPath
+				}
+				if override := c.String("filename-override"); override != "" {
+					storePath = override
+				}
+
+				input, err := inputStore(c, storePath)
+				if err != nil {
+					return toExitError(err)
+				}
+				output, err := outputStore(c, storePath)
+				if err != nil {
+					return toExitError(err)
+				}
+				order, err := decryptionOrder(c.String("decryption-order"))
+				if err != nil {
+					return toExitError(err)
+				}
+
+				merged, conflicts, err := merge(mergeOpts{
+					Cipher:          aes.NewCipher(),
+					InputStore:      input,
+					OutputStore:     output,
+					BasePath:        c.String("base"),
+					LocalPath:       localPath,
+					RemotePath:      remotePath,
+					IgnoreMAC:       c.Bool("ignore-mac"),
+					KeyServices:     keyservices(c),
+					DecryptionOrder: order,
+				})
+				if err != nil {
+					return toExitError(err)
+				}
+				if len(conflicts) > 0 {
+					return common.NewExitError(conflictMessage(conflicts), codes.ErrorGeneric)
+				}
+				if err := writeMergeOutput(outputPath, merged); err != nil {
+					return common.NewExitError(fmt.Sprintf("Could not write merged file: %s", err), codes.CouldNotWriteOutputFile)
+				}
+				if outputPath != "-" {
+					log.Info("File written successfully")
+				}
+				return nil
+			},
+		},
+		{
 			Name:      "encrypt",
 			Usage:     "encrypt a file, and output the results to stdout. If no filename is provided, stdin will be used.",
 			ArgsUsage: `[file]`,

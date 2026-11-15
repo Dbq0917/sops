@@ -17,6 +17,8 @@ Documentation
 
 You can find the SOPS documentation on `getsops.io <https://getsops.io/>`_ under `"Docs" <https://getsops.io/docs/>`_.
 
+For three-way merges of encrypted files in Git, see `docs/merge.md <docs/merge.md>`_.
+
 Security
 --------
 
